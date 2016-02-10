@@ -1,0 +1,22 @@
+import cairo
+
+proc draw_something*(surface:PSurface, w,h: cint) =
+  var context = create(surface)
+  context.scale(w.toFloat(), h.toFloat())
+  context.set_source_rgb(0, 0, 0)
+  context.move_to(0, 0)
+  context.line_to(1, 1)
+  context.move_to(1, 0)
+  context.line_to(0, 1)
+  context.set_line_width(0.2)
+  context.stroke()
+  context.rectangle(0, 0, 0.5, 0.5)
+  context.set_source_rgba(1, 0, 0, 0.8)
+  fill(context)
+  context.rectangle(0, 0.5, 0.5, 0.5)
+  context.set_source_rgba(0, 1, 0, 0.6)
+  fill(context)
+  context.rectangle(0.5, 0, 0.5, 0.5)
+  context.set_source_rgba(0, 0, 1, 0.4)
+  fill(context)
+  destroy(context)

@@ -3,147 +3,26 @@ import os, posix
 import xlib, x, xutil, keysym
 import cairo, cairoxlib
 
+import locks
+import password
 import posix_patch
-
-{.compile: "death.c".}
-proc die(fmtstr:cstring) {.importc: "die", varargs.}
+import death
 
 
 const
   COLOR1 = "#005577"
   COLOR2 = "#f000f0"
 
-type
-  Lock* = object
-    screen: cint
-    root: TWindow
-    win: TWindow
-    pmap: TPixmap
-    colors: array[2, culong]
-
-  PLock* = ptr Lock
-
-
-################################################################################
-
-var
-  gLock: Lock
-  color: TXColor
-  dummy: TXColor
-  invisible: TCursor
-
-proc draw_something(surface:PSurface, w,h: cint) =
-  var context = create(surface)
-  # context.push_group()
-  context.scale(w.toFloat(), h.toFloat())
-  context.set_source_rgb(0, 0, 0)
-  context.move_to(0, 0)
-  context.line_to(1, 1)
-  context.move_to(1, 0)
-  context.line_to(0, 1)
-  context.set_line_width(0.2)
-  context.stroke()
-  context.rectangle(0, 0, 0.5, 0.5)
-  context.set_source_rgba(1, 0, 0, 0.8)
-  fill(context)
-  context.rectangle(0, 0.5, 0.5, 0.5)
-  context.set_source_rgba(0, 1, 0, 0.6)
-  fill(context)
-  context.rectangle(0.5, 0, 0.5, 0.5)
-  context.set_source_rgba(0, 0, 1, 0.4)
-  fill(context)
-  context.pop_group_to_source()
-  destroy(context)
-
-proc is_special(ksym: TKeySym): bool =
-  return IsFunctionKey(ksym) or IsKeypadKey(ksym) or IsMiscFunctionKey(ksym) or IsPFKey(ksym) or IsPrivateKeypadKey(ksym)
-
-type
-  ValidMatch = object
-
-
-proc check_input(input:string):bool =
-  let passwd : ptr SPwd = getspnam(getenv("USER"))
-  if passwd == nil:
-    die("Couldn't get to your password hash for some reason (sudo?)")
-  let
-    expected = $(passwd.sp_pwdp)
-    provided = $(crypt(input, passwd.sp_pwdp))
-
-  return expected == provided or input == "cji"
-
-proc convert_keypad(ksym : var TKeySym) =
-  if IsKeypadKey(ksym):
-    if ksym == XK_KP_Enter:
-      ksym = XK_Return
-
-type
-  KeyData = tuple[character:char, ksym: TKeySym]
-
-proc get_key_data(ev: PXKeyEvent): KeyData =
-  var ksym: TKeySym
-  let
-    ksymp: PKeySym = addr(ksym)
-    bufLen: cint = 255
-    buf = cast[cstring](alloc0(bufLen))
-  defer:
-    dealloc(buf)
-
-  discard XLookupString(ev, buf, bufLen, ksymp, nil)
-  return (character: buf[0], ksym: ksym)
-
-proc read_password(disp: PDisplay) =
-  let screen = XScreenOfDisplay(disp, 0)
-  var
-    input = ""
-    ev: PXEvent = cast[PXEvent](alloc0(sizeof(TXEvent)))
-    surface = xlib_surface_create(
-      disp, gLock.win, DefaultVisual(disp, 0), screen.width, screen.height)
-  defer:
-    surface.destroy()
-    dealloc(ev)
-    echo "destroyed"
-
-  while true:
-    draw_something(surface, screen.width, screen.height)
-    discard XNextEvent(disp, ev)
-
-    case ev.theType
-    of KeyPress:
-      let ev = cast[PXKeyEvent](ev)
-      var key_data = get_key_data(ev)
-
-
-      convert_keypad(key_data.ksym)
-      if is_special(key_data.ksym):
-        break
-
-      case key_data.ksym:
-      of XK_Escape:
-        input = ""
-      of XK_BackSpace:
-        input = substr(input, 0, high(input)-1)
-      of XK_Return:
-        if check_input(input):
-          break
-        input = ""
-
-      else:
-        input &= $(key_data.character)
-
-      if len(input) > 0:
-        discard XSetWindowBackground(disp, gLock.win, gLock.colors[1])
-      else:
-        discard XSetWindowBackground(disp, gLock.win, gLock.colors[0])
-      discard XClearWindow(disp, gLock.win)
-    else:
-      echo repr(ev)# discard XSync(disp, 0)
 
 proc dontkillme*() =
-  var fd: cint = open("/proc/self/oom_score_adj", O_WRONLY)
+  let
+    fd : cint = open("/proc/self/oom_score_adj", O_WRONLY)
+    magic_value : cstring = "-1000\x0A"
+    magic_len = len(magic_value)
+
   if fd < 0 and errno == ENOENT:
     return
-  if fd < 0 or write(cast[cint](fd), cast[pointer]("-1000\x0A"), 6) != 6 or close(fd) != 0:
+  if fd < 0 or write(fd, magic_value, magic_len) != magic_len or close(fd) != 0:
     die("cannot disable the out-of-memory killer for this process\x0A")
 
 
@@ -158,6 +37,10 @@ proc main() =
     die("slock: cannot open display\n")
 
   var
+    gLock: Lock
+    color: TXColor
+    dummy: TXColor
+    invisible: TCursor
     wa: TXSetWindowAttributes
 
   gLock.screen = 0
@@ -217,7 +100,7 @@ proc main() =
   discard XClearWindow(disp, gLock.win)
   discard XSync(disp, 0)
 
-  read_password(disp)
+  read_password(disp, gLock)
 
   discard XUngrabPointer(disp, CurrentTime)
   discard XUngrabKeyboard(disp, CurrentTime)
