@@ -1,8 +1,10 @@
-import locks
-import draw
 import xlib, x, xutil, keysym
 import cairo, cairoxlib
-import posix, os, posix_patch
+import posix, os
+
+import draw
+import locks
+import posix_patch
 
 
 type
@@ -13,6 +15,7 @@ template is_special(ksym) : bool =
   IsFunctionKey(ksym) or IsKeypadKey(ksym) or
     IsMiscFunctionKey(ksym) or IsPFKey(ksym) or
     IsPrivateKeypadKey(ksym)
+
 
 proc convert_keypad(ksym : TKeySym) : TKeySym =
   ## A helper which makes it easier to detect when a user entered password.
@@ -43,6 +46,7 @@ proc get_key_data(ev: PXKeyEvent): KeyData =
     ksymp : PKeySym = addr(ksym)
     bufLen : cint = 255
     buf = cast[cstring](alloc0(bufLen))
+
   defer:
     dealloc(buf)
 
@@ -57,7 +61,8 @@ proc read_password*(disp: PDisplay, lock : Lock) =
   let screen = XScreenOfDisplay(disp, 0)
   var
     input = ""
-    ev : PXEvent = cast[PXEvent](alloc0(sizeof(TXEvent)))
+    tev : TXEvent
+    ev : PXEvent = addr(tev)    # declared here to avoid verbose cast at call site
     surface = xlib_surface_create(
       disp, lock.win, DefaultVisual(disp, 0),
       screen.width, screen.height
@@ -65,7 +70,6 @@ proc read_password*(disp: PDisplay, lock : Lock) =
 
   defer:
     destroy(surface)
-    dealloc(ev)
 
   while true:
     draw_something(surface, input, screen)
