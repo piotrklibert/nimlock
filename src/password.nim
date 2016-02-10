@@ -68,7 +68,7 @@ proc read_password*(disp: PDisplay, lock : Lock) =
     dealloc(ev)
 
   while true:
-    draw_something(surface, input, screen.width, screen.height)
+    draw_something(surface, input, screen)
 
     discard XNextEvent(disp, ev)
     case ev.theType
