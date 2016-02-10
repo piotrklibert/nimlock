@@ -23,6 +23,8 @@ proc make_image():  =
   context.rectangle(0.5, 0, 0.5, 0.5)
   context.set_source_rgba(0, 0, 1, 0.4)
   fill(context)
+  ## # Write output and clean up
+  discard write_to_png(surface, "setsourcergba.png")
   destroy(context)
   destroy(surface)
   return 0

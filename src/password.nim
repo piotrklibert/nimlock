@@ -3,7 +3,7 @@ import draw
 import xlib, x, xutil, keysym
 import cairo, cairoxlib
 import posix, os, posix_patch
-import death
+
 type
   KeyData* = tuple[character:char, ksym: TKeySym]
 template is_special(ksym) : bool =

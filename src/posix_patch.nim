@@ -1,3 +1,5 @@
+import posix
+
 type
   SPwd* = object
     sp_namp*: cstring          # Login name.
@@ -11,3 +13,9 @@ type
     sp_flag*: culong           # Reserved.
 
 proc getspnam*(name: cstring): ptr SPwd {.importc.}
+
+proc die*(args : varargs[string, `repr`]) {.varargs.} =
+  when not defined(release):
+    for s in items(args):
+      echo s
+  exitNow(-1)

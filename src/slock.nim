@@ -6,7 +6,6 @@ import cairo, cairoxlib
 import locks
 import password
 import posix_patch
-import death
 
 
 const
