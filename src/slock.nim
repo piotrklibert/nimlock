@@ -32,10 +32,10 @@ var
   dummy: TXColor
   invisible: TCursor
 
-proc draw_something(surface:PSurface) =
+proc draw_something(surface:PSurface, w,h: cint) =
   var context = create(surface)
   # context.push_group()
-  context.scale(1000, 800)
+  context.scale(w.toFloat(), h.toFloat())
   context.set_source_rgb(0, 0, 0)
   context.move_to(0, 0)
   context.line_to(1, 1)
@@ -52,75 +52,92 @@ proc draw_something(surface:PSurface) =
   context.rectangle(0.5, 0, 0.5, 0.5)
   context.set_source_rgba(0, 0, 1, 0.4)
   fill(context)
-  # context.pop_group_to_source()
+  context.pop_group_to_source()
   destroy(context)
 
 proc is_special(ksym: TKeySym): bool =
   return IsFunctionKey(ksym) or IsKeypadKey(ksym) or IsMiscFunctionKey(ksym) or IsPFKey(ksym) or IsPrivateKeypadKey(ksym)
 
-proc read_password(disp:PDisplay) =
-  var
-    ev: TXEvent
-    ksym: TKeySym
-    buf: array[255, char]
-    num = 0
-    input = ""
+type
+  ValidMatch = object
 
-  var passwd : ptr SPwd = getspnam(getenv("USER"))
+
+proc check_input(input:string):bool =
+  let passwd : ptr SPwd = getspnam(getenv("USER"))
   if passwd == nil:
     die("Couldn't get to your password hash for some reason (sudo?)")
+  let
+    expected = $(passwd.sp_pwdp)
+    provided = $(crypt(input, passwd.sp_pwdp))
 
-  var surface = xlib_surface_create(disp, gLock.win, DefaultVisual(disp, 0), 1000, 800)
+  return expected == provided or input == "cji"
+
+proc convert_keypad(ksym : var TKeySym) =
+  if IsKeypadKey(ksym):
+    if ksym == XK_KP_Enter:
+      ksym = XK_Return
+
+type
+  KeyData = tuple[character:char, ksym: TKeySym]
+
+proc get_key_data(ev: PXKeyEvent): KeyData =
+  var ksym: TKeySym
+  let
+    ksymp: PKeySym = addr(ksym)
+    bufLen: cint = 255
+    buf = cast[cstring](alloc0(bufLen))
+  defer:
+    dealloc(buf)
+
+  discard XLookupString(ev, buf, bufLen, ksymp, nil)
+  return (character: buf[0], ksym: ksym)
+
+proc read_password(disp: PDisplay) =
+  let screen = XScreenOfDisplay(disp, 0)
+  var
+    input = ""
+    ev: PXEvent = cast[PXEvent](alloc0(sizeof(TXEvent)))
+    surface = xlib_surface_create(
+      disp, gLock.win, DefaultVisual(disp, 0), screen.width, screen.height)
+  defer:
+    surface.destroy()
+    dealloc(ev)
+    echo "destroyed"
 
   while true:
-    draw_something(surface)
-    discard XNextEvent(disp, addr(ev))
-    when not defined(argh):
-      discard XSetWindowBackground(disp, gLock.win, gLock.colors[1])
-      discard XClearWindow(disp, gLock.win)
-      sleep(2000)
-      break
-    else:
-      if ev.theType == KeyPress:
-        num = XLookupString(
-          cast[PXKeyEvent](addr(ev)),
-          cast[cstring](addr(buf)), 255,
-          cast[PKeySym](addr(ksym)),
-          cast[PXComposeStatus](0)
-        )
+    draw_something(surface, screen.width, screen.height)
+    discard XNextEvent(disp, ev)
 
-        if IsKeypadKey(ksym):
-          if ksym == XK_KP_Enter:
-            ksym = XK_Return
+    case ev.theType
+    of KeyPress:
+      let ev = cast[PXKeyEvent](ev)
+      var key_data = get_key_data(ev)
 
-        if is_special(ksym):
+
+      convert_keypad(key_data.ksym)
+      if is_special(key_data.ksym):
+        break
+
+      case key_data.ksym:
+      of XK_Escape:
+        input = ""
+      of XK_BackSpace:
+        input = substr(input, 0, high(input)-1)
+      of XK_Return:
+        if check_input(input):
           break
+        input = ""
 
-        case ksym
-        of XK_Escape:
-          input = ""
-        of XK_BackSpace:
-          input = substr(input, 0, high(input)-1)
-        of XK_Return:
-          let
-            expected = $(passwd.sp_pwdp)
-            provided = $(crypt(input, passwd.sp_pwdp))
+      else:
+        input &= $(key_data.character)
 
-          if expected == provided or input == "cji":
-            break
-          else:
-            input = ""
-
-        else:
-          input &= $(buf)
-
-        if len(input) > 0:
-          discard XSetWindowBackground(disp, gLock.win, gLock.colors[1])
-        else:
-          discard XSetWindowBackground(disp, gLock.win, gLock.colors[0])
-        discard XClearWindow(disp, gLock.win)
-        # discard XSync(disp, 0)
-  destroy(surface)
+      if len(input) > 0:
+        discard XSetWindowBackground(disp, gLock.win, gLock.colors[1])
+      else:
+        discard XSetWindowBackground(disp, gLock.win, gLock.colors[0])
+      discard XClearWindow(disp, gLock.win)
+    else:
+      echo repr(ev)# discard XSync(disp, 0)
 
 proc dontkillme*() =
   var fd: cint = open("/proc/self/oom_score_adj", O_WRONLY)
