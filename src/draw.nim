@@ -2,6 +2,7 @@ import cairo
 
 proc draw_something*(surface:PSurface, w,h: cint) =
   var context = create(surface)
+  context.push_group()
   context.scale(w.toFloat(), h.toFloat())
   context.set_source_rgb(0, 0, 0)
   context.move_to(0, 0)
@@ -19,4 +20,7 @@ proc draw_something*(surface:PSurface, w,h: cint) =
   context.rectangle(0.5, 0, 0.5, 0.5)
   context.set_source_rgba(0, 0, 1, 0.4)
   fill(context)
+  context.pop_group_to_source()
+  context.fill()
+  context.paint()
   destroy(context)
