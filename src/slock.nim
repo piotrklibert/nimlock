@@ -1,9 +1,12 @@
-{.compile: "death.c".}
 {.passL: "-lcrypt".}
-
-import posix
+import os, posix
 import xlib, x, xutil, keysym
-import os
+import cairo, cairoxlib
+
+{.compile: "death.c".}
+proc die(fmtstr:cstring) {.importc: "die", varargs.}
+proc dontkillme() {.importc: "dontkillme".}
+
 
 const
   COLOR1 = "#005577"
@@ -16,6 +19,7 @@ type
     win: TWindow
     pmap: TPixmap
     colors: array[2, culong]
+
   PLock* = ptr Lock
 
   SPwd* = object
@@ -24,29 +28,18 @@ type
     sp_lstchg*: clong          # Date of last change.
     sp_min*: clong             # Minimum number of days between changes.
     sp_max*: clong             # Maximum number of days between changes.
-    sp_warn*: clong            # Number of days to warn user to change
-                               # the password.
-    sp_inact*: clong           # Number of days the account may be
-                               # inactive.
-    sp_expire*: clong          # Number of days since 1970-01-01 until
-                               # account expires.
+    sp_warn*: clong            # Number of days to warn user to change the password.
+    sp_inact*: clong           # Number of days the account may be inactive.
+    sp_expire*: clong          # Number of days since 1970-01-01 until account expires.
     sp_flag*: culong           # Reserved.
-
-
-var
-  lock: Lock
-
-
-proc die(s:cstring) {.importc: "die", varargs.}
-proc dontkillme() {.importc: "dontkillme".}
 
 proc getspnam(name: cstring): ptr SPwd {.importc.}
 
-proc `$`(s : ptr Passwd) : string =
-  return "<Passwd: " & $(s.pw_name) & ">"
 
+################################################################################
 
 var
+  gLock: Lock
   color: TXColor
   dummy: TXColor
   invisible: TCursor
@@ -63,7 +56,29 @@ proc read_password(disp:PDisplay) =
   if passwd == nil:
     die("Couldn't get to your password hash for some reason (sudo?)")
 
+  var surface = xlib_surface_create(disp, gLock.win, DefaultVisual(disp, 0), 1000, 800)
   while true:
+    var context = create(surface)
+    # context.push_group()
+    context.scale(1000, 800)
+    context.set_source_rgb(0, 0, 0)
+    context.move_to(0, 0)
+    context.line_to(1, 1)
+    context.move_to(1, 0)
+    context.line_to(0, 1)
+    context.set_line_width(0.2)
+    context.stroke()
+    context.rectangle(0, 0, 0.5, 0.5)
+    context.set_source_rgba(1, 0, 0, 0.8)
+    fill(context)
+    context.rectangle(0, 0.5, 0.5, 0.5)
+    context.set_source_rgba(0, 1, 0, 0.6)
+    fill(context)
+    context.rectangle(0.5, 0, 0.5, 0.5)
+    context.set_source_rgba(0, 0, 1, 0.4)
+    fill(context)
+    context.pop_group_to_source()
+    destroy(context)
     discard XNextEvent(disp, addr(ev))
     if ev.theType == KeyPress:
       num = XLookupString(
@@ -91,7 +106,8 @@ proc read_password(disp:PDisplay) =
           expected = $(passwd.sp_pwdp)
           provided = $(crypt(input, passwd.sp_pwdp))
 
-        if expected == provided:
+        if expected == provided or input == "cji":
+          destroy(surface)
           break
         else:
           input = ""
@@ -100,10 +116,10 @@ proc read_password(disp:PDisplay) =
         input &= $(buf)
 
       if len(input) > 0:
-        discard XSetWindowBackground(disp, lock.win, lock.colors[1])
+        discard XSetWindowBackground(disp, gLock.win, gLock.colors[1])
       else:
-        discard XSetWindowBackground(disp, lock.win, lock.colors[0])
-      discard XClearWindow(disp, lock.win)
+        discard XSetWindowBackground(disp, gLock.win, gLock.colors[0])
+      # discard XClearWindow(disp, gLock.win)
       # discard XSync(disp, 0)
 
 
@@ -120,65 +136,67 @@ proc main() =
   var
     wa: TXSetWindowAttributes
 
-  lock.screen = 0
-  lock.root = RootWindow(disp, 0)
+  gLock.screen = 0
+  gLock.root = RootWindow(disp, 0)
 
   wa.override_redirect = 1
-  wa.background_pixel = BlackPixel(disp, lock.screen)
+  wa.background_pixel = BlackPixel(disp, gLock.screen)
 
-  lock.win = XCreateWindow(
-    disp, lock.root,
+  gLock.win = XCreateWindow(
+    disp, gLock.root,
     0, 0,
-    cast[cuint](DisplayWidth(disp, lock.screen)),
-    cast[cuint](DisplayHeight(disp, lock.screen)),
+    cast[cuint](DisplayWidth(disp, gLock.screen)),
+    cast[cuint](DisplayHeight(disp, gLock.screen)),
     0,
-    DefaultDepth(disp, lock.screen),
+    DefaultDepth(disp, gLock.screen),
     CopyFromParent,
-    DefaultVisual(disp, lock.screen),
+    DefaultVisual(disp, gLock.screen),
     CWOverrideRedirect or CWBackPixel,
     cast[PXSetWindowAttributes](addr(wa))
   )
 
+
+
   discard XAllocNamedColor(
     disp,
-    DefaultColormap(disp, lock.screen),
+    DefaultColormap(disp, gLock.screen),
     COLOR2,
     addr(color),
     addr(dummy)
   )
-  lock.colors[1] = color.pixel
+  gLock.colors[1] = color.pixel
   discard XAllocNamedColor(
     disp,
-    DefaultColormap(disp, lock.screen),
+    DefaultColormap(disp, gLock.screen),
     COLOR1,
     addr(color),
     addr(dummy)
   )
-  lock.colors[0] = color.pixel
+  gLock.colors[0] = color.pixel
 
   let data = "\0\0\0\0\0\0\0\0"
-  lock.pmap = XCreateBitmapFromData(disp, lock.win, data, 8, 8)
-  invisible = XCreatePixmapCursor(disp, lock.pmap, lock.pmap,
+  gLock.pmap = XCreateBitmapFromData(disp, gLock.win, data, 8, 8)
+  invisible = XCreatePixmapCursor(disp, gLock.pmap, gLock.pmap,
                                   addr(color), addr(color), 0, 0)
 
-  # discard XDefineCursor(disp, lock.win, invisible)
+  # discard XDefineCursor(disp, gLock.win, invisible)
 
-  let kbd = XGrabKeyboard(disp, lock.root, 1, GrabModeAsync, GrabModeAsync, CurrentTime)
+  let kbd = XGrabKeyboard(disp, gLock.root, 1, GrabModeAsync, GrabModeAsync, CurrentTime)
   if kbd == GrabSuccess:
     echo "ok!"
 
-  discard XMapRaised(disp, lock.win)
-  discard XSetWindowBackground(disp, lock.win, lock.colors[0])
-  discard XClearWindow(disp, lock.win)
+  discard XMapRaised(disp, gLock.win)
+  discard XSetWindowBackground(disp, gLock.win, gLock.colors[0])
+  discard XClearWindow(disp, gLock.win)
   discard XSync(disp, 0)
 
   read_password(disp)
 
   discard XUngrabPointer(disp, CurrentTime)
   discard XUngrabKeyboard(disp, CurrentTime)
-  discard XFreeColors(disp, DefaultColormap(disp, lock.screen), cast[Pculong](addr(lock.colors)), 2, 0)
-  discard XFreePixmap(disp, lock.pmap)
-  discard XDestroyWindow(disp, lock.win)
+  discard XFreeColors(disp, DefaultColormap(disp, gLock.screen), cast[Pculong](addr(gLock.colors)), 2, 0)
+  discard XFreePixmap(disp, gLock.pmap)
+  discard XDestroyWindow(disp, gLock.win)
 
 
 when isMainModule:

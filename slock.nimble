@@ -8,4 +8,4 @@ srcDir        = "src"
 bin           = @["slock"]
 
 # Dependencies
-requires @["nim >= 0.13.0", "x11 >= 0.1"]
+requires @["nim >= 0.13.0", "x11 >= 0.1", "cairo >= 0.1"]
