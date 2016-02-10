@@ -5,7 +5,6 @@ import cairo, cairoxlib
 
 {.compile: "death.c".}
 proc die(fmtstr:cstring) {.importc: "die", varargs.}
-proc dontkillme() {.importc: "dontkillme".}
 
 
 const
@@ -21,19 +20,6 @@ type
     colors: array[2, culong]
 
   PLock* = ptr Lock
-
-  SPwd* = object
-    sp_namp*: cstring          # Login name.
-    sp_pwdp*: cstring          # Encrypted password.
-    sp_lstchg*: clong          # Date of last change.
-    sp_min*: clong             # Minimum number of days between changes.
-    sp_max*: clong             # Maximum number of days between changes.
-    sp_warn*: clong            # Number of days to warn user to change the password.
-    sp_inact*: clong           # Number of days the account may be inactive.
-    sp_expire*: clong          # Number of days since 1970-01-01 until account expires.
-    sp_flag*: culong           # Reserved.
-
-proc getspnam(name: cstring): ptr SPwd {.importc.}
 
 
 ################################################################################
@@ -119,8 +105,15 @@ proc read_password(disp:PDisplay) =
         discard XSetWindowBackground(disp, gLock.win, gLock.colors[1])
       else:
         discard XSetWindowBackground(disp, gLock.win, gLock.colors[0])
-      # discard XClearWindow(disp, gLock.win)
+      discard XClearWindow(disp, gLock.win)
       # discard XSync(disp, 0)
+
+proc dontkillme*() =
+  var fd: cint = open("/proc/self/oom_score_adj", O_WRONLY)
+  if fd < 0 and errno == ENOENT:
+    return
+  if fd < 0 or write(cast[cint](fd), cast[pointer]("-1000\x0A"), 6) != 6 or close(fd) != 0:
+    die("cannot disable the out-of-memory killer for this process\x0A")
 
 
 proc main() =
