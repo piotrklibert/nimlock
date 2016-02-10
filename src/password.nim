@@ -68,9 +68,9 @@ proc read_password*(disp: PDisplay, lock : Lock) =
     dealloc(ev)
 
   while true:
-    draw_something(surface, screen.width, screen.height)
-    discard XNextEvent(disp, ev)
+    draw_something(surface, input, screen.width, screen.height)
 
+    discard XNextEvent(disp, ev)
     case ev.theType
     of KeyPress:
       let ev = cast[PXKeyEvent](ev)
