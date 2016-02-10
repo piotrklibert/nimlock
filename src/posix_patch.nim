@@ -10,4 +10,4 @@ type
     sp_expire*: clong          # Number of days since 1970-01-01 until account expires.
     sp_flag*: culong           # Reserved.
 
-proc getspnam(name: cstring): ptr SPwd {.importc.}
+proc getspnam*(name: cstring): ptr SPwd {.importc.}
