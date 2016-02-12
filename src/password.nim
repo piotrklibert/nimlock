@@ -5,7 +5,7 @@ import cairo, cairoxlib
 
 import draw
 import locks
-import posix_patch
+import posix_utils
 
 
 type
