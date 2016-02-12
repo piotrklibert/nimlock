@@ -1,6 +1,7 @@
 {.passL: "-lcrypt".}
 import xlib, x, xutil, keysym
 import posix, os
+import cairo, cairoxlib
 
 import draw
 import locks
@@ -9,19 +10,6 @@ import posix_patch
 
 type
   KeyData* = tuple[character:char, ksym: TKeySym]
-
-
-template is_special(ksym) : bool =
-  IsFunctionKey(ksym) or IsKeypadKey(ksym) or
-    IsMiscFunctionKey(ksym) or IsPFKey(ksym) or
-    IsPrivateKeypadKey(ksym)
-
-
-proc convert_keypad(ksym : TKeySym) : TKeySym =
-  ## A helper which makes it easier to detect when a user entered password.
-  if ksym == XK_KP_Enter:
-    return XK_Return
-  return ksym
 
 
 proc check_input(input : string) : bool =
@@ -39,61 +27,86 @@ proc check_input(input : string) : bool =
     return expected == provided or input == "cji"
 
 
+
+template is_special(ksym) : bool =
+  IsFunctionKey(ksym) or IsMiscFunctionKey(ksym) or IsPFKey(ksym)
+
+
+proc convert_keypad(ksym : TKeySym) : TKeySym =
+  ## A helper which makes it easier to detect when a user entered password.
+  if ksym == XK_KP_Enter:
+    return XK_Return
+  elif ksym >= XK_KP_0 and ksym <= XK_KP_9:
+    return (ksym - XK_KP_0) + XK_0
+  else:
+    return ksym
+
+
 proc get_key_data(ev: PXKeyEvent): KeyData =
   var
-    ksym: TKeySym
-  let
-    ksymp : PKeySym = addr(ksym)
+    ksym : TKeySym = XKeyCodeToKeySym(ev.display, cast[TKeyCode](ev.keycode), 0)
+    res : TKeySym = ksym
     bufLen : cint = 255
-    buf = cast[cstring](alloc0(bufLen))
+    buf : cstring = cast[cstring](alloc0(bufLen))
+
+  discard XLookupString(ev, buf, bufLen, addr(res), nil)
 
   defer:
-    dealloc(buf)
+    buf.dealloc()
 
   if IsKeypadKey(ksym):
-    ksym = convert_keypad(ksym)
+    res = convert_keypad(ksym)
+  return (character: buf[0], ksym: res)
 
-  discard XLookupString(ev, buf, bufLen, ksymp, nil)
-  return (character: buf[0], ksym: ksym)
 
 
 proc read_password*(lock : PLock) =
+  proc clear(screen : SL_PScreen) : int {. discardable .}=
+    XClearWindow(screen.display, lock.win)
+
   let screen = lock.screen
   var
     input = ""
-    tev : TXEvent
-    ev : PXEvent = addr(tev)    # declared here to avoid verbose cast at call site
+    event : TXEvent
+    eventp : PXEvent = addr(event)    # declared here to avoid verbose cast at call site
     surface = xlib_surface_create(
-      disp, lock.win, DefaultVisual(disp, 0),
-      screen.width, screen.height
+      lock.screen.display, lock.win,
+      DefaultVisual(lock.screen.display, lock.screen.screen_num),
+      screen.screen_data.width, screen.screen_data.height
     )
 
   defer:
     destroy(surface)
 
   while true:
-    draw_something(surface, input, screen)
+    draw_something(surface, input, lock.screen.screen_data)
 
-    discard XNextEvent(disp, ev)
-    case ev.theType
+    discard XNextEvent(lock.screen.display, eventp)
+
+    case eventp.theType
     of KeyPress:
-      let ev = cast[PXKeyEvent](ev)
-      var key_data = get_key_data(ev)
+      let eventp = cast[PXKeyEvent](eventp)
 
-      if is_special(key_data.ksym):
+      var (character, ksym) = get_key_data(eventp)
+      if is_special(ksym):
         break
 
-      case key_data.ksym:
+      case ksym:
       of XK_Escape:
         input = ""
+        lock.screen.clear()
+
       of XK_BackSpace:
-        input = substr(input, 0, high(input)-1)
+        input = input.substr(0, high(input)-1)
+        lock.screen.clear()
+
       of XK_Return:
         if check_input(input):
           break
         input = ""
+        lock.screen.clear()
+
       else:
-        let character = key_data.character
         if character != '\0':
           input &= $(character)
     else:

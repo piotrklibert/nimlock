@@ -38,8 +38,8 @@ proc main() =
   dontkillme()
 
   let
-    lock = newLock(get_display(), DefaultScreen(disp))
-    color = make_color(disp, BG_COLOR)
+    lock = newLock(get_display(), 0)
+    color = make_color(lock.screen.display, BG_COLOR)
 
   discard XSetWindowBackground(lock.screen.display, lock.win, color.pixel)
 
