@@ -1,5 +1,5 @@
+{.passL: "-lcrypt".}
 import xlib, x, xutil, keysym
-import cairo, cairoxlib
 import posix, os
 
 import draw
@@ -57,8 +57,8 @@ proc get_key_data(ev: PXKeyEvent): KeyData =
   return (character: buf[0], ksym: ksym)
 
 
-proc read_password*(disp: PDisplay, lock : Lock) =
-  let screen = XScreenOfDisplay(disp, 0)
+proc read_password*(lock : PLock) =
+  let screen = lock.screen
   var
     input = ""
     tev : TXEvent

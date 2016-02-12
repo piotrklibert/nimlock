@@ -1,7 +1,6 @@
-{.passL: "-lcrypt".}
-import os, posix
-import xlib, x, xutil, keysym
-import cairo, cairoxlib
+import os
+import posix
+import xlib
 
 import locks
 import password
@@ -12,79 +11,46 @@ const
   BG_COLOR = "#005577"
 
 
+proc make_color(disp:PDisplay, color_name:string) : TXColor =
+  var screen_color, hwd_color: TXColor
+  discard XAllocNamedColor(disp, DefaultColormap(disp, DefaultScreen(disp)),
+                           color_name, addr(screen_color), addr(hwd_color))
+  return screen_color
+
+
+proc get_display() : PDisplay =
+  ## Either return an (untraced) pointer to a Display structure or crash if
+  ## it's impossible.
+  result = XOpenDisplay(getenv("DISPLAY"))
+  if result == nil:
+    die("slock: cannot open display\n")
+
+
+proc hide_cursor(screen : SL_PScreen) =
+  var color = make_color(screen.display, "#000")
+  var pmap = XCreateBitmapFromData(screen.display, screen.root_win, "\0", 1, 1)
+  var cursor_shape = XCreatePixmapCursor(screen.display, pmap, pmap,
+                                  addr(color), addr(color), 0, 0)
+  discard XDefineCursor(screen.display, screen.root_win, cursor_shape)
+
+
 proc main() =
   dontkillme()
 
-  let disp = XOpenDisplay(":0")
-  if disp == nil:
-    die("slock: cannot open display\n")
+  let
+    lock = newLock(get_display(), DefaultScreen(disp))
+    color = make_color(disp, BG_COLOR)
 
-  var
-    lock: Lock
-    color: TXColor
-    dummy: TXColor
-    invisible: TCursor
-    wa: TXSetWindowAttributes
+  discard XSetWindowBackground(lock.screen.display, lock.win, color.pixel)
 
-  ##
-  lock.screen_num = 0
-  lock.screen = XScreenOfDisplay(disp, lock.screen_num)
-  lock.root = RootWindow(disp, 0)
+  lock.screen.hide_cursor()
+  lock.lock_keyboard()
+  lock.display()
 
-  wa.override_redirect = 1
-  wa.background_pixel = BlackPixelOfScreen(lock.screen)
+  # Wait for events in a loop; return when the lock gets unlocked by the user.
+  read_password(lock)
 
-  lock.win = XCreateWindow(
-    disp, lock.root,
-    0, 0,
-    cast[cuint](DisplayWidth(disp, lock.screen_num)),
-    cast[cuint](DisplayHeight(disp, lock.screen_num)),
-    0,
-    DefaultDepthOfScreen(lock.screen),
-    CopyFromParent,
-    DefaultVisualOfScreen(lock.screen),
-    CWOverrideRedirect or CWBackPixel,
-    cast[PXSetWindowAttributes](addr(wa))
-  )
-
-
-  discard XAllocNamedColor(
-    disp,
-    DefaultColormapOfScreen(lock.screen),
-    BG_COLOR,
-    addr(color),
-    addr(dummy)
-  )
-
-  let data = "\0\0\0\0\0\0\0\0"
-  lock.pmap = XCreateBitmapFromData(disp, lock.win, data, 8, 8)
-  invisible = XCreatePixmapCursor(disp, lock.pmap, lock.pmap,
-                                  addr(color), addr(color), 0, 0)
-
-  var screen = XScreenOfDisplay(XOpenDisplay(":0"), 0)
-  echo screen.width, "x", screen.height
-
-  # discard XDefineCursor(disp, lock.win, invisible)
-
-  let kbd = XGrabKeyboard(disp, lock.root, 1, GrabModeAsync, GrabModeAsync, CurrentTime)
-  if kbd == GrabSuccess:
-    echo "ok!"
-
-  discard XMapRaised(disp, lock.win)
-  discard XSetWindowBackground(disp, lock.win, color.pixel)
-  discard XClearWindow(disp, lock.win)
-  discard XSync(disp, 0)
-
-  read_password(disp, lock)
-
-  discard XUngrabPointer(disp, CurrentTime)
-  discard XUngrabKeyboard(disp, CurrentTime)
-  discard XFreeColors(
-    disp, DefaultColormapOfScreen(lock.screen),
-    addr(color.pixel), 2, 0
-  )
-  discard XFreePixmap(disp, lock.pmap)
-  discard XDestroyWindow(disp, lock.win)
+  # All the cleanup done in Lock destructor
 
 
 when isMainModule:
