@@ -1,10 +1,9 @@
 {.passL: "-lcrypt".}
-import xlib, x, xutil, keysym
 import posix, os
 import cairo, cairoxlib
+import x, xlib, xutil, keysym
 
-import draw
-import locks
+import locks, draw
 import posix_utils
 
 
@@ -16,6 +15,8 @@ proc check_input(input : string) : bool =
   let passwd : ptr SPwd = getspnam(getenv("USER"))
   if passwd == nil:
     die("Couldn't get to your password hash for some reason (sudo?)")
+  defer:
+    passwd.dealloc()
 
   let
     expected = $(passwd.sp_pwdp) # a salted hash from /etc/shadow, for current user
@@ -111,4 +112,4 @@ proc read_password*(lock : PLock) =
           input &= $(character)
     else:
       when not defined(release):
-          echo "Got some other event"
+          echo "Got some other event\n\t", repr(event)
