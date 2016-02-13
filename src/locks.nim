@@ -9,6 +9,16 @@ type
     root_win*: TWindow
   SL_PScreen* = ref SL_Screen
 
+
+template visual*(s : SL_PScreen) : PVisual =
+  DefaultVisualOfScreen(s.screen_data)
+
+proc extent*(s : SL_PScreen) : (cint, cint) =
+  let d = s.screen_data
+  return (d.width, d.height)
+
+
+type
   Lock* = object
     ## A Lock structure contains data about X windows involved in locking a
     ## particular screen. In X you can easily have many screens and they all

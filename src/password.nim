@@ -65,19 +65,17 @@ proc read_password*(lock : PLock) =
   proc clear(screen : SL_PScreen) : int {. discardable .}=
     XClearWindow(screen.display, lock.win)
 
-  let screen = lock.screen
+  let
+    screen = lock.screen
+    (width, height) = screen.extent()
   var
     input = ""
     event : TXEvent
     eventp : PXEvent = addr(event)    # declared here to avoid verbose cast at call site
-    surface = xlib_surface_create(
-      lock.screen.display, lock.win,
-      DefaultVisual(lock.screen.display, lock.screen.screen_num),
-      screen.screen_data.width, screen.screen_data.height
-    )
-
+    surface = xlib_surface_create(screen.display, lock.win, screen.visual(),
+                                  width, height)
   defer:
-    destroy(surface)
+    surface.destroy()
 
   while true:
     draw_something(surface, input, lock.screen.screen_data)
@@ -95,17 +93,17 @@ proc read_password*(lock : PLock) =
       case ksym:
       of XK_Escape:
         input = ""
-        lock.screen.clear()
+        screen.clear()
 
       of XK_BackSpace:
         input = input.substr(0, high(input)-1)
-        lock.screen.clear()
+        screen.clear()
 
       of XK_Return:
         if check_input(input):
           break
         input = ""
-        lock.screen.clear()
+        screen.clear()
 
       else:
         if character != '\0':

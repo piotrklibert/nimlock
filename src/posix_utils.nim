@@ -14,7 +14,7 @@ type
     sp_flag*: culong           # Reserved.
 
 
-proc getspnam*(name: cstring): ptr SPwd {.importc.}
+proc getspnam*(name: cstring): ptr SPwd {. importc .}
 
 
 proc die*(args : varargs[string, `repr`]) {.varargs.} =
