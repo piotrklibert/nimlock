@@ -1,4 +1,15 @@
-import posix
+import macros
+import os, posix
+
+
+macro die*(args: varargs[untyped]): untyped =
+  var echo_call = newCall("echo")
+  for a in args:
+    echo_call.add a
+  return newStmtList(
+    echo_call,
+    newCall("exitNow", newLit(-1))
+  )
 
 
 type
@@ -14,14 +25,37 @@ type
     sp_flag*: culong           # Reserved.
 
 
-proc getspnam*(name: cstring): ptr SPwd {. importc .}
+proc getspnam_unsafe(name: cstring): ptr SPwd {. importc: "getspnam" .}
+proc getspnam*(name: string): SPwd =
+  let
+    spwd = getspnam_unsafe(name)
+  if spwd.isNil:
+    die("Couldn't get to your password hash for some reason (sudo?)")
+  return spwd[]
 
 
-proc die*(args : varargs[string, `repr`]) {.varargs.} =
-  when not defined(release):
-    for s in items(args):
-      echo s
-  exitNow(-1)
+proc dropsudo*() =
+  let
+    uid = getuid()
+    egid = getegid()
+  errno = 0
+  var pw = getpwuid(uid)
+  try:
+    if pw.isNil:
+      raise newException(ValueError, "can't access PW record")
+
+    if egid != pw.pw_gid:
+      if setgid(pw.pw_gid) < 0:
+        raise newException(ValueError, "setgid failed")
+
+    if uid != pw.pw_uid:
+      if setuid(pw.pw_uid) < 0:
+        raise newException(ValueError, "setuid failed")
+
+    echo("slock: dropped privilages, ok")
+
+  except ValueError:
+    die("slock: cannot drop privileges: " & getCurrentExceptionMsg() & "\n")
 
 
 proc dontkillme*() =
@@ -36,3 +70,9 @@ proc dontkillme*() =
     return
   if fd < 0 or write(fd, magic_value, magic_len) != magic_len or close(fd) != 0:
     die("cannot disable the out-of-memory killer for this process\x0A")
+
+
+when isMainModule:
+  ## tests...
+  let x = getspnam(getenv("USER"))
+  echo x

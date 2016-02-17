@@ -11,22 +11,21 @@ type
   KeyData* = tuple[character:char, ksym: TKeySym]
 
 
+var Password_Hash: string
+
+proc initpassword*(username:string) =
+  Password_Hash = $getspnam(username).sp_pwdp
+
+
 proc check_input(input : string) : bool =
-  let passwd : ptr SPwd = getspnam(getenv("USER"))
-  if passwd == nil:
-    die("Couldn't get to your password hash for some reason (sudo?)")
-  defer:
-    passwd.dealloc()
-
+  if Password_Hash.isNil:
+    let msg = ("You have to call `initpassword` before you can check user " &
+               "input against the password.")
+    raise newException(ValueError, msg)
   let
-    expected = $(passwd.sp_pwdp) # a salted hash from /etc/shadow, for current user
-    provided = $(crypt(input, passwd.sp_pwdp))
-
-  when defined(release):
-    return expected == provided
-  else:
-    return expected == provided or input == "cji"
-
+    expected = $(Password_Hash)
+    provided = $(crypt(input, Password_Hash))
+  return expected == provided
 
 
 template is_special(ksym) : bool =
@@ -44,19 +43,19 @@ proc convert_keypad(ksym : TKeySym) : TKeySym =
 
 
 proc get_key_data(ev: PXKeyEvent): KeyData =
+  const limit = 25
   var
     ksym : TKeySym = XKeyCodeToKeySym(ev.display, cast[TKeyCode](ev.keycode), 0)
     res : TKeySym = ksym
-    bufLen : cint = 255
-    buf : cstring = cast[cstring](alloc0(bufLen))
-
-  discard XLookupString(ev, buf, bufLen, addr(res), nil)
-
+    buf = cast[cstring](alloc0(limit))
   defer:
     buf.dealloc()
 
+  discard XLookupString(ev, buf, limit, addr(res), nil)
+
   if IsKeypadKey(ksym):
     res = convert_keypad(ksym)
+
   return (character: buf[0], ksym: res)
 
 
@@ -87,8 +86,9 @@ proc read_password*(lock : PLock) =
       let eventp = cast[PXKeyEvent](eventp)
 
       var (character, ksym) = get_key_data(eventp)
-      if is_special(ksym):
-        break
+      when not defined(release):
+          if is_special(ksym):
+            break
 
       case ksym:
       of XK_Escape:

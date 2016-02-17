@@ -1,3 +1,4 @@
+import os
 import xlib
 
 import locks
@@ -10,6 +11,8 @@ const
 
 proc main() =
   dontkillme()
+  initpassword(getenv("USER"))
+  dropsudo()
 
   let
     lock = newLock(get_display(), 0)
