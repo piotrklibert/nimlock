@@ -19,9 +19,10 @@ proc get_display*() : PDisplay =
     die("slock: cannot open display\n")
 
 
-proc hide_cursor*(screen : SL_PScreen) =
+proc hide_cursor*(lock : PLock) =
+  let screen = lock.screen
   var color = make_color(screen.display, "#000")
   var pmap = XCreateBitmapFromData(screen.display, screen.root_win, "\0", 1, 1)
   var cursor_shape = XCreatePixmapCursor(screen.display, pmap, pmap,
                                   addr(color), addr(color), 0, 0)
-  discard XDefineCursor(screen.display, screen.root_win, cursor_shape)
+  discard XDefineCursor(screen.display, lock.win, cursor_shape)

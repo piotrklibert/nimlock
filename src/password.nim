@@ -1,4 +1,5 @@
 {.passL: "-lcrypt".}
+
 import posix, os
 import cairo, cairoxlib
 import x, xlib, xutil, keysym
@@ -14,10 +15,11 @@ type
 var Password_Hash: string
 
 proc initpassword*(username:string) =
+  ## Has to be called, with superuser privilages, before calling `check_input`.
   Password_Hash = $getspnam(username).sp_pwdp
 
 
-proc check_input(input : string) : bool =
+proc check_input*(input : string) : bool =
   if Password_Hash.isNil:
     let msg = ("You have to call `initpassword` before you can check user " &
                "input against the password.")
@@ -75,6 +77,7 @@ proc read_password*(lock : PLock) =
                                   width, height)
   defer:
     surface.destroy()
+
 
   while true:
     draw_something(surface, input, lock.screen.screen_data)

@@ -1,6 +1,5 @@
 {. experimental .} # destructor support
 import xlib, x
-
 type
   SL_Screen* = object
     display*: PDisplay

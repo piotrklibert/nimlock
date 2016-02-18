@@ -20,7 +20,7 @@ proc main() =
 
   discard XSetWindowBackground(lock.screen.display, lock.win, color.pixel)
 
-  lock.screen.hide_cursor()
+  lock.hide_cursor()
   lock.lock_keyboard()
   lock.display()
 

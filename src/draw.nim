@@ -22,11 +22,14 @@ proc draw_something*(surface:PSurface, input:string, screen:PScreen) =
   defer:
     ctx.destroy()
 
+  # var b = image_surface_create_from_png("/home/cji/shots/jira_agile.png")
+  # ctx.set_source(b, 0, 0)
+  # ctx.paint()
+
   ctx.scale(w, h)
 
   ctx.set_font_size_px(screen, 28)
   ctx.select_font_face("Georgia", FONT_SLANT_NORMAL, FONT_WEIGHT_NORMAL)
   ctx.move_to(0.4, 0.5)
   ctx.set_source_rgb(0, 0, 0)
-
   show_text(ctx, "> " & "*".repeat(len(input)))
