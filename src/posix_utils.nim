@@ -1,6 +1,6 @@
+{.passL: "-lcrypt".}
 import macros
 import os, posix
-
 
 macro die*(args: varargs[untyped]): untyped =
   var echo_call = newCall("echo")

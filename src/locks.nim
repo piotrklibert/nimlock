@@ -1,5 +1,11 @@
 {. experimental .} # destructor support
+
 import xlib, x
+import os, posix
+import posix_utils
+
+
+################################################################################
 type
   SL_Screen* = object
     display*: PDisplay
@@ -7,7 +13,6 @@ type
     screen_num*: int32
     root_win*: TWindow
   SL_PScreen* = ref SL_Screen
-
 
 template visual*(s : SL_PScreen) : PVisual =
   DefaultVisualOfScreen(s.screen_data)
@@ -17,6 +22,8 @@ proc extent*(s : SL_PScreen) : (cint, cint) =
   return (d.width, d.height)
 
 
+
+################################################################################
 type
   Lock* = object
     ## A Lock structure contains data about X windows involved in locking a
@@ -33,7 +40,6 @@ proc make_window(screen:SL_PScreen) : TWindow
 
 
 # Constructors/destructor
-################################################################################
 proc newLock*() : PLock = new(Lock)
 
 proc newLock*(display : PDisplay, screen_num : int32) : PLock =
@@ -51,7 +57,8 @@ proc newLock*(display : PDisplay, screen_num : int32) : PLock =
   return lock
 
 
-proc `=destroy`*(lock:Plock)  =
+proc `=destroy`*(lock:Plock) =
+  echo "Releasing resources..."
   let disp = lock.screen.display
   discard XUngrabKeyboard(disp, CurrentTime)
   discard XDestroyWindow(disp, lock.win)
@@ -59,7 +66,6 @@ proc `=destroy`*(lock:Plock)  =
 
 
 # Methods
-################################################################################
 proc display*(lock:PLock) =
     discard XMapRaised(lock.screen.display, lock.win)
 
@@ -98,3 +104,27 @@ proc make_window(screen:SL_PScreen) : TWindow =
     CWOverrideRedirect or CWBackPixel,
     cast[PXSetWindowAttributes](addr(attrs))
   )
+
+
+proc get_display*() : PDisplay =
+  ## Either return an (untraced) pointer to a Display structure or crash if
+  ## it's impossible.
+  result = XOpenDisplay(getenv("DISPLAY"))
+  if result == nil:
+    die("slock: cannot open display\n")
+
+
+proc make_color(disp: PDisplay, color_name: string) : TXColor =
+  var screen_color, hwd_color: TXColor
+  discard XAllocNamedColor(disp, DefaultColormap(disp, DefaultScreen(disp)),
+                           color_name, addr(screen_color), addr(hwd_color))
+  return screen_color
+
+proc hide_cursor*(lock : PLock) =
+  let screen = lock.screen
+  var
+    color = make_color(screen.display, "#000")
+    pmap = XCreateBitmapFromData(screen.display, screen.root_win, "\0", 1, 1)
+    cursor_shape = XCreatePixmapCursor(screen.display, pmap, pmap,
+                                       addr(color), addr(color), 0, 0)
+  discard XDefineCursor(screen.display, lock.win, cursor_shape)

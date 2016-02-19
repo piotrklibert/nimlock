@@ -1,5 +1,3 @@
-{.passL: "-lcrypt".}
-
 import posix, os
 import cairo, cairoxlib
 import x, xlib, xutil, keysym
@@ -8,31 +6,33 @@ import locks, draw
 import posix_utils
 
 
-type
-  KeyData* = tuple[character:char, ksym: TKeySym]
-
-
 var Password_Hash: string
 
 proc initpassword*(username:string) =
   ## Has to be called, with superuser privilages, before calling `check_input`.
+  ## This fetches and caches the password hash of a user so that subsequent
+  ## checks can be done without elevated privilages. The value is cached in a
+  ## global variable `Password_Hash`.
   Password_Hash = $getspnam(username).sp_pwdp
 
 
-proc check_input*(input : string) : bool =
+proc verify_hash_initialized() =
   if Password_Hash.isNil:
     let msg = ("You have to call `initpassword` before you can check user " &
                "input against the password.")
     raise newException(ValueError, msg)
+
+proc check_input*(input : string) : bool =
+  verify_hash_initialized()
   let
     expected = $(Password_Hash)
     provided = $(crypt(input, Password_Hash))
   return expected == provided
 
 
-template is_special(ksym) : bool =
-  IsFunctionKey(ksym) or IsMiscFunctionKey(ksym) or IsPFKey(ksym)
 
+type
+  KeyData* = tuple[character:char, ksym: TKeySym]
 
 proc convert_keypad(ksym : TKeySym) : TKeySym =
   ## A helper which makes it easier to detect when a user entered password.
@@ -44,9 +44,10 @@ proc convert_keypad(ksym : TKeySym) : TKeySym =
     return ksym
 
 
-proc get_key_data(ev: PXKeyEvent): KeyData =
+proc get_key_data(ev: PXEvent): KeyData =
   const limit = 25
   var
+    ev = cast[PXKeyEvent](ev)
     ksym : TKeySym = XKeyCodeToKeySym(ev.display, cast[TKeyCode](ev.keycode), 0)
     res : TKeySym = ksym
     buf = cast[cstring](alloc0(limit))
@@ -63,9 +64,6 @@ proc get_key_data(ev: PXKeyEvent): KeyData =
 
 
 proc read_password*(lock : PLock) =
-  proc clear(screen : SL_PScreen) : int {. discardable .}=
-    XClearWindow(screen.display, lock.win)
-
   let
     screen = lock.screen
     (width, height) = screen.extent()
@@ -73,44 +71,30 @@ proc read_password*(lock : PLock) =
     input = ""
     event : TXEvent
     eventp : PXEvent = addr(event)    # declared here to avoid verbose cast at call site
-    surface = xlib_surface_create(screen.display, lock.win, screen.visual(),
-                                  width, height)
+    window = xlib_surface_create(screen.display, lock.win,
+                                 screen.visual(), width, height)
   defer:
-    surface.destroy()
+    window.destroy()
 
+  draw_splash(window, input, screen.screen_data)
 
-  while true:
-    draw_something(surface, input, lock.screen.screen_data)
-
-    discard XNextEvent(lock.screen.display, eventp)
-
+  while XNextEvent(lock.screen.display, eventp) == 0:
     case eventp.theType
     of KeyPress:
-      let eventp = cast[PXKeyEvent](eventp)
-
-      var (character, ksym) = get_key_data(eventp)
-      when not defined(release):
-          if is_special(ksym):
-            break
+      let (character, ksym) = get_key_data(eventp)
+      if check_input(input):
+        break
 
       case ksym:
-      of XK_Escape:
+      of XK_Escape, XK_Return:
         input = ""
-        screen.clear()
-
       of XK_BackSpace:
         input = input.substr(0, high(input)-1)
-        screen.clear()
-
-      of XK_Return:
-        if check_input(input):
-          break
-        input = ""
-        screen.clear()
-
       else:
         if character != '\0':
-          input &= $(character)
+          input = input & character
+
+      draw_splash(window, input, lock.screen.screen_data)
     else:
-      when not defined(release):
-          echo "Got some other event\n\t", repr(event)
+      # Unrecognized event, ignore it
+      discard

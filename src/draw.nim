@@ -1,35 +1,46 @@
+import xlib
 import cairo
-import xlib, x
 import strutils
 
 import locks
 
 
-proc move_to_px(ctx:PContext, screen:PScreen, x,y:int) =
-  let
-    x = x / screen.width
-    y = y / screen.height
-  ctx.move_to(x,y)
-
-proc set_font_size_px(ctx:PContext, screen:PScreen, px:int) =
-  ctx.set_font_size(px / screen.height)
+const
+  BG_COLOR = "#005577"
 
 
-proc draw_something*(surface:PSurface, input:string, screen:PScreen) =
+proc hex_to_rgb(hex: string) : (float, float, float) =
+  ## The expected format is '#112233'
+  assert len(hex) == 7
+  var hex = hex[1 .. ^1]
+  return (
+    hex[0 .. 1].parseHexInt() / 255,
+    hex[2 .. 3].parseHexInt() / 255,
+    hex[4 .. 5].parseHexInt() / 255
+  )
+
+proc set_source_hex(ctx: PContext, hex: string) =
+  let (r, g, b) = hex_to_rgb(hex)
+  ctx.set_source_rgb(r, g, b)
+
+
+
+proc draw_splash*(surface:PSurface, input:string, screen:PScreen) =
   let
     (w, h) = (screen.width.toFloat(), screen.height.toFloat())
     ctx = create(surface)
   defer:
     ctx.destroy()
 
-  # var b = image_surface_create_from_png("/home/cji/shots/jira_agile.png")
-  # ctx.set_source(b, 0, 0)
-  # ctx.paint()
-
   ctx.scale(w, h)
+  if len(input) == 0:
+    ctx.set_source_rgb(0, 0, 0)
+  else:
+    ctx.set_source_hex(BG_COLOR)
+  ctx.rectangle(0, 0, 1, 1)
+  ctx.fill()
 
-  ctx.set_font_size_px(screen, 28)
-  ctx.select_font_face("Georgia", FONT_SLANT_NORMAL, FONT_WEIGHT_NORMAL)
-  ctx.move_to(0.4, 0.5)
-  ctx.set_source_rgb(0, 0, 0)
-  show_text(ctx, "> " & "*".repeat(len(input)))
+
+
+when isMainModule:
+  echo repr(hex_to_rgb(BG_COLOR))
